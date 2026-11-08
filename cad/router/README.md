@@ -1,6 +1,6 @@
 # CNC router: new design (CAD stage)
 
-A new machine designed from scratch. It is a general-purpose vertical router for wood, plastics and aluminium. Renders, the bill of materials and drawings will come once the design is final.
+A new machine designed from scratch. It is a general-purpose vertical router for wood, plastics and aluminium. The bill of materials and drawings will come once the design is final.
 
 ## Files
 

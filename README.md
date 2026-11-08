@@ -110,7 +110,7 @@ python3 -m pytest -q tests
 
 ## New CNC router (in design)
 
-A new general-purpose vertical router (wood, plastics, aluminium) with a 300 × 250 × 100 mm work area: Bosch Rexroth profiles, HIWIN HGR15 rails, SFU1605 ball screws, NEMA23 motors, a 1.5 kW water-cooled spindle and a polycarbonate enclosure. The full CAD is generated from code and clash-checked across the whole travel. It is **not ready to build yet**: the parts list, drawings, electronics and control software are still to come. Details and pictures are in [cad/router/README.md](cad/router/README.md).
+A new general-purpose vertical router (wood, plastics, aluminium) with a 300 × 250 × 100 mm work area: Bosch Rexroth profiles, HIWIN HGR15 rails, SFU1605 ball screws, NEMA23 motors, a 1.5 kW water-cooled spindle and a polycarbonate enclosure. The full CAD is generated from code and clash-checked at the centre and all 8 corners of the travel. It is **not ready to build yet**: the parts list, drawings, electronics and control software are still to come. Details and pictures are in [cad/router/README.md](cad/router/README.md).
 
 ## Citation
 
