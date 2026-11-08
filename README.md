@@ -2,6 +2,12 @@
 
 Bachelor graduation project: a CNC vertical drilling machine for PCBs and plates with a desktop control app, live sensor monitoring (spindle current, temperature, vibration) and camera-based hole inspection.
 
+| Upgraded machine | In its cover | Control app: quality check against the drawing |
+|---|---|---|
+| ![upgraded machine](cad/pictures/machine_upgraded_iso_front_right.png) | ![machine in its cover](cad/pictures/machine_enclosed_door_open.png) | ![quality check](docs/app_quality_check.png) |
+
+Every improvement and where it lives: [IMPROVEMENTS.md](IMPROVEMENTS.md). Full CAD and pictures: [cad/UPGRADE.md](cad/UPGRADE.md).
+
 - **Paper:** [Intelligent CNC Vertical Drilling Machine](https://www.researchgate.net/publication/408419810_Intelligent_CNC_Vertical_Drilling_Machine) (ResearchGate)
 - **Video:** [the machine running on YouTube](https://www.youtube.com/watch?v=lhm-_ZcUPpU)
 
