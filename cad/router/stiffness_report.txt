@@ -1,0 +1,15 @@
+Side plates 30 mm; beam torsion box 10 mm plates, effectiveness 0.50 (It 1082 cm⁴ vs 182 for the bare profile).
+Tool tip at Z bottom: 128 mm above the floor; beam axis 252 mm above it and 234 mm behind it.
+
+100 N in X: 7.0 µm at the tool (14.2 N/µm)
+     6.9 µm  side plates sway (30 mm plates bending in their thin direction)
+     0.1 µm  Z slide bending over 71 mm overhang
+
+100 N in Y: 3.5 µm at the tool (28.5 N/µm)
+     0.2 µm  beam bending (80 direction)
+     3.2 µm  beam twist from Fy at 252 mm below its axis
+     0.1 µm  Z slide bending over 71 mm overhang
+
+100 N in Z: 2.8 µm at the tool (36.0 N/µm)
+     0.1 µm  beam bending (160 direction)
+     2.7 µm  beam twist from Fz at 234 mm in front of its axis

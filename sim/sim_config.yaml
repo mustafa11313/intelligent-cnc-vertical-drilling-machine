@@ -1,0 +1,9 @@
+# Config for running the app against the simulator (sim/run_sim.py).
+serial:
+  grbl_port: /tmp/cnc-sim/grbl
+  daq_port: /tmp/cnc-sim/daq
+camera:
+  device: sim
+  calibration: ""
+database:
+  path: /tmp/cnc-sim/cnc_sim.db

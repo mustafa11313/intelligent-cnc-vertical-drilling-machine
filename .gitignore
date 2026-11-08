@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# Large generated CAD (published on the Releases page; regenerate with cad/router/assembly.py)
+cad/router/step/

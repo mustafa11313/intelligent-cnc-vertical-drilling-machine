@@ -1,0 +1,23 @@
+X    +0 Y    +0 Z   +0: no clashes
+X  -150 Y  -125 Z -100: no clashes
+X  -150 Y  -125 Z   +0: no clashes
+X  -150 Y  +125 Z -100: no clashes
+X  -150 Y  +125 Z   +0: no clashes
+X  +150 Y  -125 Z -100: no clashes
+X  +150 Y  -125 Z   +0: no clashes
+X  +150 Y  +125 Z -100: no clashes
+X  +150 Y  +125 Z   +0: no clashes
+
+Margins at the ends of travel (closest distance, mm):
+  at X+150 Y+0 Z+0: x_nut_SFU1605 to x_BK12: 70.0
+  at X+150 Y+0 Z+0: x_block_HGH15CA_+1_320 to upright_R: 34.7
+  at X-150 Y+0 Z+0: x_block_HGH15CA_-1_320 to upright_L: 40.0
+  at X+0 Y-125 Z+0: y_block_HGH15CA_+1+1 to upright_R: 3.0
+  at X+0 Y+125 Z+0: y_nut_SFU1605 to y_BF12: 130.0
+  at X+0 Y+0 Z+0: bolt_M5x16_znut_2 to z_BK12: 2.0
+  at X+0 Y+0 Z-100: z_nut_housing to z_BF12: 11.0
+  at X+0 Y+0 Z+0: z_plate to z_motor_NEMA23: 4.8
+  at X+0 Y+0 Z-100: spindle_clamp to spoilboard_MDF: 68.0
+
+Tool tip (25 mm out of the collet): Z 128 to 228 mm above the floor; spoilboard top at 135, so the tip goes from 8 mm into the spoilboard to 92 mm above it.
+Total clashes: 0
