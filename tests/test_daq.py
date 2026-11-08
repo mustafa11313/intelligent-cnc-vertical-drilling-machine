@@ -31,3 +31,30 @@ def test_no_random_in_app():
         code = re.sub(r'"""[\s\S]*?"""', "", f.read_text())      # ignore docstrings
         assert not re.search(r"^\s*(import random|from random)", code, re.M), f.name
         assert "np.random" not in code and "numpy.random" not in code, f.name
+
+
+def test_load_field_and_old_firmware_lines():
+    s = parse_line(format_line(10, 3.0, 30.0, None, 0, 0, 1, 0.02, 50.0), now=0)
+    assert s.load == 50.0 and s.current == 3.0
+    # Firmware 2.0 had no load field: still accepted, load unknown
+    body = "D,10,3.000,30.00,nan,0.0000,0.0000,1.0000,0.0200"
+    from app.daq import checksum
+    old = parse_line(f"{body}*{checksum(body)}", now=0)
+    assert old is not None and old.load is None and old.vib == 0.02
+
+
+def test_old_database_gets_load_column(tmp_path):
+    import sqlite3
+
+    from app.database import SAMPLE_COLUMNS, Database
+    path = tmp_path / "old.db"
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE samples (id INTEGER PRIMARY KEY, session_id INTEGER, t REAL, current_a REAL,"
+              " temp1_c REAL, temp2_c REAL, ax_g REAL, ay_g REAL, az_g REAL, vib_g REAL, x REAL, y REAL,"
+              " z REAL, spindle INTEGER, state TEXT)")
+    c.commit()
+    c.close()
+    db = Database(str(path))
+    cols = {r[1] for r in db.conn.execute("PRAGMA table_info(samples)")}
+    assert set(SAMPLE_COLUMNS) <= cols
+    db.close()

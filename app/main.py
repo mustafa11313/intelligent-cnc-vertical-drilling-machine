@@ -57,6 +57,7 @@ class MachineLink(QObject):
 
     status = pyqtSignal(dict)
     message = pyqtSignal(str)
+    homing_done = pyqtSignal(bool, str)
     alarm = pyqtSignal(str)
     grbl_reset = pyqtSignal()
     grbl_state = pyqtSignal(str, str)      # port or '', text
@@ -139,6 +140,10 @@ class MachineLink(QObject):
             self.ack_listener.handle_ack(tag, ok, code)
 
     def _on_grbl_message(self, text):
+        if text.startswith("DOOR"):
+            if self.ack_listener is not None:
+                self.ack_listener.handle_door(text)
+            self.alarm.emit(text)
         if text.startswith("ALARM"):
             if self.ack_listener is not None:
                 self.ack_listener.handle_alarm(text)
@@ -213,6 +218,31 @@ def _inspection_text(found, results, summary, nominal, calib):
         bad = [r["index"] + 1 for r in results if not r.get("ok")]
         if bad:
             text += f"\nOut of tolerance or missing: {', '.join(map(str, bad[:30]))}"
+    return text
+
+
+def _qc_text(results, summary, nominal):
+    """Result of the head camera quality check (align.inspect_holes)."""
+    n, ok = summary["expected"], summary["passed"]
+    text = (f"Quality check (head camera, hole by hole): {ok} of {n} holes OK, "
+            f"{summary['found']} found.")
+    if summary["max_pos_err"] is not None:
+        text += (f"\nPosition error against the drawing: mean {summary['mean_pos_err']:.3f} mm, "
+                 f"max {summary['max_pos_err']:.3f} mm.")
+    if "pattern_shift" in summary:
+        sx, sy = summary["pattern_shift"]
+        text += (f"\nOf that, the whole pattern is shifted X{sx:+.3f} Y{sy:+.3f} mm and turned "
+                 f"{summary['pattern_rot_deg']:+.3f}°; hole to hole the machine is within "
+                 f"{summary['max_hole_to_hole_err']:.3f} mm.")
+    ds = [r["d_mm"] for r in results if r.get("found")]
+    if ds:
+        text += f"\nDiameter {min(ds):.3f}-{max(ds):.3f} mm" + (f" (drill {nominal:.2f} mm)." if nominal else ".")
+    missing = [r["index"] + 1 for r in results if not r.get("found")]
+    bad = [r["index"] + 1 for r in results if r.get("found") and not r["ok"]]
+    if bad:
+        text += f"\nOut of tolerance: {', '.join(map(str, bad[:30]))}"
+    if missing:
+        text += f"\nMissing: {', '.join(map(str, missing[:30]))}"
     return text
 
 
@@ -308,8 +338,23 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         self.Balign.setGeometry(430, 514, 235, 26)
         self.Balign.setToolTip("Measure 1-3 fiducials with the head camera and correct the job "
                                "for the board's real position and rotation")
-        for b in (self.BinspectCam, self.BinspectFile, self.BcamCalib, self.BheadCal, self.Balign):
+        self.BqcHead = QtWidgets.QPushButton("Quality check vs drawing", self.SideIP)
+        self.BqcHead.setGeometry(260, 544, 405, 26)
+        self.BqcHead.setToolTip("Visit every hole of the job with the head camera, measure its position and "
+                                "diameter, and compare them with the drawing")
+        for b in (self.BinspectCam, self.BinspectFile, self.BcamCalib, self.BheadCal, self.Balign, self.BqcHead):
             b.show()
+        # Two rows of buttons under a slightly smaller picture, so nothing covers the results text
+        self.IpWidget.setGeometry(51, 10, 601, 400)
+        for row, btns in ((416, (self.BcamCalib, self.BinspectCam, self.BinspectFile)),
+                          (446, (self.BheadCal, self.Balign, self.BqcHead))):
+            for k, b in enumerate(btns):
+                b.setGeometry(20 + 222 * k, row, 216, 26)
+        self.label_89.setGeometry(20, 480, 101, 16)
+        self.IPdiaL.setGeometry(130, 480, 31, 16)
+        self.label_92.setGeometry(167, 480, 41, 16)
+        self.label_93.setGeometry(20, 500, 101, 16)
+        self.IPresultL.setGeometry(20, 518, 661, 110)
         self.IPresultL.setWordWrap(True)
         self.IPresultL.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
@@ -334,7 +379,7 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
                        (self.LZpos_2, 485), (self.Ltemp_2, 330)):
             lbl.setGeometry(x, lbl.y(), 90, lbl.height())
         self.sensor_label = QtWidgets.QLabel(self.SystemTab)
-        self.sensor_label.setGeometry(140, 288, 450, 80)
+        self.sensor_label.setGeometry(140, 288, 450, 100)
         self.sensor_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         x0 = 620
         self.BreConnect = QtWidgets.QPushButton("Reconnect boards", self.SystemTab)
@@ -345,6 +390,11 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         self.Bunlock.setGeometry(x0 + 340, 35, 150, 28)
         self.Bimport = QtWidgets.QPushButton("Import old my_db.db...", self.SystemTab)
         self.Bimport.setGeometry(x0 + 500, 35, 170, 28)
+        self.Bhome = QtWidgets.QPushButton("Home machine ($H)", self.SystemTab)
+        self.Bhome.setGeometry(x0 + 680, 35, 150, 28)
+        self.Bhome.setEnabled(self._homing_on())
+        self.Bhome.setToolTip("Find the limit switches. Enable homing in config.yaml (machine.homing) "
+                              "once the switches are fitted.")
         self.console = QtWidgets.QPlainTextEdit(self.SystemTab)
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(3000)
@@ -354,7 +404,7 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         self.cmd_entry.setPlaceholderText("Send a G-code or $ command to GRBL (Enter)")
         self.cmd_entry.setGeometry(x0, 676, 890, 26)
         for w in (self.sensor_label, self.BreConnect, self.BapplyGrbl, self.Bunlock, self.Bimport,
-                  self.console, self.cmd_entry):
+                  self.Bhome, self.console, self.cmd_entry):
             w.show()
 
         self.status_label = QtWidgets.QLabel()
@@ -365,6 +415,7 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         L.status.connect(self._on_status)
         L.message.connect(self._log)
         L.alarm.connect(self._on_alarm)
+        L.homing_done.connect(self._on_homing_done)
         L.grbl_state.connect(self._on_grbl_state)
         L.daq_state.connect(self._on_daq_state)
         L.daq_sample.connect(self._on_daq_sample)
@@ -417,11 +468,13 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         self.aligner.done.connect(self._on_align_done)
         self.BheadCal.clicked.connect(self._calibrate_head_camera)
         self.Balign.clicked.connect(self._align_board)
+        self.BqcHead.clicked.connect(self.run_head_qc)
 
         # System tab
         self.BreConnect.clicked.connect(self.link.connect_all)
         self.BapplyGrbl.clicked.connect(self._apply_grbl_settings)
         self.Bunlock.clicked.connect(self._unlock)
+        self.Bhome.clicked.connect(self._home)
         self.Bimport.clicked.connect(self._import_legacy)
         self.cmd_entry.returnPressed.connect(self._send_console_cmd)
 
@@ -474,10 +527,24 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
             self._warn("The motion controller (GRBL) is not connected. See the System tab.")
             return None
         if need_idle and g.state.state == "Alarm":
-            self._warn("The machine is in ALARM. Check it, then use 'Unlock alarm' on the System tab "
-                       "and set the work zero again.")
+            if self._homing_on():
+                self._warn("The machine is in ALARM. Check it, then press 'Home machine' on the System tab. "
+                           "Homing restores the work zero.")
+            else:
+                self._warn("The machine is in ALARM. Check it, then use 'Unlock alarm' on the System tab "
+                           "and set the work zero again.")
+            return None
+        if need_idle and g.state.state == "Door":
+            self._warn("The cover door is open. Close it, press Start on the electrical box, then 'Unlock alarm' "
+                       "on the System tab.")
+            return None
+        if need_idle and g.state.state == "Home":
+            self._warn("The machine is homing. Wait for it to finish.")
             return None
         return g
+
+    def _homing_on(self):
+        return bool(self.cfg["machine"]["homing"]["enabled"])
 
     def _warn(self, text):
         QtWidgets.QMessageBox.warning(self, "CNC", text)
@@ -519,11 +586,13 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
             self._show_grbl_settings()
             g = self.link.grbl
             if g and g.settings:
-                mismatched = [k for k, v in self.cfg["machine"]["grbl_settings"].items()
+                mismatched = [k for k, v in config.grbl_settings(self.cfg).items()
                               if k in g.settings and abs(g.settings[k] - v) > 1e-6]
                 if mismatched:
                     self._log(f"GRBL settings differ from config.yaml for ${', $'.join(map(str, mismatched))}. "
                               "Use 'Apply machine settings' if config.yaml is right.")
+            if self._homing_on() and g and g.state.state == "Alarm":
+                self._log("Homing is enabled: press 'Home machine' on the System tab before moving")
 
     def _on_daq_state(self, port, text):
         self.BoardList_3.clear()
@@ -559,7 +628,7 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         st = self.machine.get("state", "Disconnected")
         if st != "Alarm":
             colour = {"Idle": "#2e7d32", "Run": "#1565c0", "Jog": "#1565c0",
-                      "Hold": "#ef6c00"}.get(st, "#555")
+                      "Hold": "#ef6c00", "Door": "#ef6c00"}.get(st, "#555")
             self.status_label.setStyleSheet(f"color: white; background: {colour}; padding: 2px 6px;")
         self.status_label.setText(f" {st} ")
         self.label_56.setText(time.strftime("%Y/%m/%d ; %H:%M:%S"))
@@ -574,7 +643,8 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
             self.sensor_label.setText(
                 f"Current: {_fmt(s.current, 'A', 2)}\n"
                 f"Temperature: {_fmt(s.temp1, '°C', 1)} (probe 2: {_fmt(s.temp2, '°C', 1)})\n"
-                f"Vibration: {_fmt(s.vib, 'g rms', 3)}   tilt {_fmt(tilt, '°', 1)}")
+                f"Vibration: {_fmt(s.vib, 'g rms', 3)}   tilt {_fmt(tilt, '°', 1)}\n"
+                f"Spindle load: {_fmt(s.load, '% of VFD rating', 0)}")
         if self.runner and self.runner.active:
             r = self.runner
             self.Lqueue_2.setText(f"{r.done_count}/{len(r.holes)}")
@@ -769,8 +839,10 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.source, info["notes"], json.dumps(params.__dict__))
             self.logger = SampleLogger(self.db, self.session_id)
         self.run_holes = active
+        hc = self.cfg["machine"]["homing"]
         self.runner = SessionRunner(g, active, params, on_hole=self.bridge.hole.emit,
-                                    on_finished=self.bridge.finished.emit, on_log=self.bridge.log.emit)
+                                    on_finished=self.bridge.finished.emit, on_log=self.bridge.log.emit,
+                                    require_homed=hc["enabled"] and hc["required_before_job"])
         self.link.ack_listener = self.runner
         try:
             self.runner.start()
@@ -831,7 +903,10 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
             QtWidgets.QMessageBox.information(self, "Session finished", message)
             if self.session_info and self.session_info.get("qc"):
                 self.Sidebar.setCurrentWidget(self.SideIP)
-                self.run_inspection(None)
+                if self._head_camera_ready():
+                    self.run_head_qc(ask=False)          # hole by hole, against the drawing
+                else:
+                    self.run_inspection(None)            # one photo with the overview camera
         else:
             QtWidgets.QMessageBox.warning(self, f"Session {result}", message)
 
@@ -927,7 +1002,7 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         if g is None or (self.runner and self.runner.active):
             return
         try:
-            changed = g.write_settings(self.cfg["machine"]["grbl_settings"])
+            changed = g.write_settings(config.grbl_settings(self.cfg))
         except GrblError as e:
             return self._warn(str(e))
         self._log(f"GRBL settings written: {', '.join('$' + str(c) for c in changed) or 'none changed'}")
@@ -935,10 +1010,48 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def _unlock(self):
         g = self.link.grbl
+        if g and g.state.state == "Door":
+            if g.state.substate != "Door:0":
+                return self._warn("The cover door is still open. Close it first.")
+            g.door_resume()
+            self.status_label.setStyleSheet("")
+            self._log("Door closed and cleared. If K1 dropped, press Start on the electrical box. "
+                      "Home the machine if it was moving when the door opened")
+            return
         if g:
+            if (g._last_alarm or "").startswith("ALARM 1"):
+                g.soft_reset()                  # a hard limit needs a reset before $X
+                time.sleep(0.3)
             g.unlock()
             self.status_label.setStyleSheet("")
             self._log("Alarm unlocked. Position may be wrong: set work zero again before drilling")
+
+    def _home(self):
+        g = self.link.grbl
+        if g is None or not g.connected:
+            return self._warn("The motion controller (GRBL) is not connected. See the System tab.")
+        if self.runner and self.runner.active:
+            return
+        if (g._last_alarm or "").startswith("ALARM 1"):
+            g.soft_reset()                      # a hard limit needs a reset before $H
+            time.sleep(0.3)
+        self._log("Homing: each axis moves to its switch, keep clear of the machine")
+        self.Bhome.setEnabled(False)
+
+        def run():
+            try:
+                g.home()
+                self.link.homing_done.emit(True, "Homing done. Machine position and work zero are valid")
+            except GrblError as e:
+                self.link.homing_done.emit(False, f"Homing failed: {e}")
+
+        threading.Thread(target=run, name="homing", daemon=True).start()
+
+    def _on_homing_done(self, ok, text):
+        self.Bhome.setEnabled(True)
+        if ok:
+            self.status_label.setStyleSheet("")
+        self._log(text)
 
     def _send_console_cmd(self):
         cmd = self.cmd_entry.text().strip()
@@ -1013,8 +1126,8 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
         # table: one column per sample (layout of the original page), newest 1000
         fields = [("Time (s)", "t"), ("Current (A)", "current_a"), ("Temp 1 (°C)", "temp1_c"),
                   ("Temp 2 (°C)", "temp2_c"), ("ax (g)", "ax_g"), ("ay (g)", "ay_g"), ("az (g)", "az_g"),
-                  ("Vibration (g)", "vib_g"), ("X (mm)", "x"), ("Y (mm)", "y"), ("Z (mm)", "z"),
-                  ("Spindle", "spindle"), ("State", "state")]
+                  ("Vibration (g)", "vib_g"), ("Spindle load (%)", "load_pct"), ("X (mm)", "x"),
+                  ("Y (mm)", "y"), ("Z (mm)", "z"), ("Spindle", "spindle"), ("State", "state")]
         start = max(0, n - 1000)
         tbl = self.ParametersDATAtable
         tbl.clear()
@@ -1195,10 +1308,55 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
 
     # ------------------------------------------------------- head camera
     def _head_frame_fn(self):
-        dev = self.cfg["camera"]["device"]
+        cam = self.cfg["camera"]
+        dev = cam.get("head_device", cam["device"])
         if str(dev) == "sim":
-            raise RuntimeError("the simulator has no head camera; use a real camera device")
+            from sim.camera_sim import head_view_from_sim
+            g = self.link.grbl
+            sim = self.cfg["sim"]
+            return lambda: head_view_from_sim(sim["dir"], g.state.wpos, self._nominal_d() or 1.0,
+                                              mm_per_px=sim["mm_per_px"])
         return lambda: vision.grab_frame(int(dev) if str(dev).isdigit() else dev)
+
+    def _head_camera_ready(self):
+        cam = self.cfg["camera"]
+        return cam.get("head_offset_mm") is not None and cam.get("head_matrix") is not None
+
+    def run_head_qc(self, ask=True):
+        """Quality check: the head camera visits every hole of the job and compares it with the drawing."""
+        g = self._grbl()
+        if g is None:
+            return
+        if not self._head_camera_ready():
+            return self._warn("Calibrate the head camera first (drill a test hole, then 'Calibrate head camera').")
+        expected = self._expected_for_inspection()
+        if not expected:
+            return self._warn("There is no job to compare with. Load the drawing (points or DXF) first.")
+        if ask:
+            r = QtWidgets.QMessageBox.question(
+                self, "Quality check",
+                f"The head camera will visit all {len(expected)} holes and compare them with the drawing. "
+                "The machine moves at jog speed with the spindle off. Start?")
+            if r != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+        if g.state.spindle_on:
+            g.send("M5")
+        cam, m = self.cfg["camera"], self.cfg["machine"]
+        nominal = self._nominal_d()
+        try:
+            pos_tol = self._float(self.LbitDiamtr_2, "Allowed tolerance")
+        except ValueError:
+            pos_tol = cam["position_tol_mm"]
+        try:
+            frame = self._head_frame_fn()
+        except RuntimeError as e:
+            return self._warn(str(e))
+        self.IPresultL.setText(f"Quality check: visiting {len(expected)} holes with the head camera...")
+        self._qc_nominal = nominal
+        self.aligner.run("qc", lambda log: align.inspect_holes(
+            g, frame, self.calib, expected, cam["head_matrix"], cam["head_offset_mm"], cam["head_z"],
+            nominal_d=nominal, pos_tol=pos_tol, d_tol=cam["diameter_tol_mm"],
+            feed=m["jog_feed"], z_feed=m["z_jog_feed"], polarity=cam["polarity"], log=log))
 
     def _calibrate_head_camera(self):
         g = self._grbl()
@@ -1211,7 +1369,7 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
             self, "Calibrate head camera",
             f"Was a test hole just drilled at the current position X{x:.3f} Y{y:.3f}?\n\n"
             "The machine will raise Z to the camera height and move the camera over the hole "
-            "three times (3 mm apart).")
+            "three times (1 mm apart). Use a hole with no other hole within 2 mm.")
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         cam, m = self.cfg["camera"], self.cfg["machine"]
@@ -1258,6 +1416,15 @@ class MyApp(QtWidgets.QMainWindow, Ui_MainWindow):
     def _on_align_done(self, kind, result):
         if kind == "error":
             return self._warn(f"Camera alignment failed: {result}")
+        if kind == "qc":
+            results, summary, mosaic = result
+            holes = self.run_holes if getattr(self, "run_holes", None) else \
+                [h for h in self.holes if h.status != "Skipped"]
+            for r in results:
+                if r["index"] < len(holes):
+                    holes[r["index"]].status = "QC OK" if r["ok"] else "QC fail"
+            self._refresh_holes()
+            return self._on_inspection(mosaic, None, results, _qc_text(results, summary, self._qc_nominal))
         if kind == "calib":
             M, c = result
             self.cfg["camera"]["head_matrix"] = [[float(v) for v in row] for row in M]

@@ -23,15 +23,20 @@ app/            desktop application (PyQt6)
   ports.py        finds the boards on /dev/ttyUSB*
   config.py       config.yaml handling
 firmware/
-  daq/daq.ino     new DAQ board firmware (current RMS, 2× DS18B20, ADXL345 FIFO)
+  daq/daq.ino     new DAQ board firmware (current RMS, spindle load, 2× DS18B20, ADXL345 FIFO)
+  daq/sim_test/   runs the DAQ firmware on a simulated ATmega328P (simavr)
   grbl/README.md  motion board: stock GRBL 1.1h, rewiring, settings
 electronics/    circuit review, improved diagrams, parts list
-cad/            review measured from the original Parasolid assembly (xt/ reader), full upgrade (UPGRADE.md), STEP parts
+cad/            review measured from the original Parasolid assembly (xt/ reader), full upgrade (UPGRADE.md), STEP parts,
+                home switches, electrical box, machine cover, stiffness check
   router/         new CNC router design (CadQuery): assembly, clash check, stiffness check, pictures
+  original_solidworks/  the original SolidWorks design (Ana_Montaj_1_6_25.SLDASM, parts) and its Parasolid export
 CALIBRATION.md  step-by-step calibration and acceptance test
 sim/            virtual machine: GRBL + DAQ on virtual serial ports, camera images
-tests/          47 automated tests (pytest), including a full GUI run on the simulator
+tests/          61 automated tests (pytest), including a full GUI run on the simulator
 ```
+
+A list of every improvement and where it lives is in [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
 ## Install (Ubuntu 22.04)
 

@@ -98,6 +98,72 @@ def z_top_plate():
     for dx in (-15.5, 15.5):
         for dz in (-15.5, 15.5):                                                   # M3 standoffs, NEMA17 square
             p = hole(p, 2.5, (ax + dx, 475.0, az + dz), (0, -1, 0), 8)
+    p = hole(p, 11.0, (Z_SENSOR[0], 475.0, Z_SENSOR[1]), (0, -1, 0), 20)          # Z home sensor, tap M12x1
+    return p
+
+
+# ------------------------------------------------------------ home switches
+# Three LJ12A3-4-Z/BX inductive sensors (M12, 4 mm nominal range on steel).
+# Each sees a steel target and triggers about 3 mm from it, a few mm before
+# the axis reaches a hard end. The ends were measured on Ana_Montaj with xt/:
+#   X: the table's blocks reach the ends of the 400 mm rails (x = 200)
+#   Y: the spindle holder Spindle_Tutucu (152 mm wide, wider than the
+#      120 mm carriage plate) reaches the side plate Yan_Plaka_2 (z = 22.5)
+#      after 71.8 mm. Side plate inner faces are 311.5 mm apart, so Y has
+#      159.5 mm of travel, not the 191 mm of the carriage plate alone
+#   Z: the spindle holder's top face reaches the Z top plate (102.8 mm up)
+SENSOR_RANGE = 3.0                  # trigger gap used for placement (assured range of a 4 mm sensor ~3.2)
+X_SENSOR = (192.0, 106.0)           # (x, y): on the front base profile, looks along -z at the front blocks
+Y_SENSOR = (-59.5, 340.0)           # (x, y): through Yan_Plaka_2, looks along -z at the holder end (Z homed)
+Z_SENSOR = (-64.0, -165.0)          # (x, z): through the Z top plate, looks down at the holder top
+HOLDER_TOP = 352.2                  # Spindle_Tutucu top face after ZSHIFT (y), Z at its CAD pose
+Z_HOME_DZ = 455.0 - SENSOR_RANGE - (HOLDER_TOP + 2.0)    # Z rise at which the switch triggers
+PULL_OFF = 1.0                      # GRBL $27
+HOLDER_END = -49.3                  # Spindle_Tutucu end face towards Yan_Plaka_2 (z)
+Y_TRAVEL_PLUS = 22.5 - HOLDER_END                       # 71.8: from the CAD pose to the hard stop
+Y_HOME_DY = 22.5 - SENSOR_RANGE - (HOLDER_END + 2.0)    # 66.8: Y move at which the switch triggers
+
+
+def x_limit_bracket():
+    """5 mm aluminium plate on the outside face of the front base profile
+    (z = 22.5), beyond the side plate. One M8 T-slot bolt in the profile's
+    upper slot (y 67.5), slotted ±5 mm in X to set the trigger point. The
+    sensor screws into the M12x1 thread above the profile top (no room for
+    a nut on the inside), locked with its nut outside, and looks at the
+    side of the front rail's leading HGH15CA block (steel) 3 mm away."""
+    x, y = X_SENSOR
+    p = box(x - 10, x + 10, 55.0, 118.0, 22.5, 27.5)
+    p = p.cut(box(x - 5, x + 5, 67.5 - 4.25, 67.5 + 4.25, 22.5, 27.5))           # M8 slot, ±5 mm
+    for dx in (-5, 5):
+        p = hole(p, 8.5, (x + dx, 67.5, 22.5), (0, 0, 1), 5)
+    return hole(p, 11.0, (x, y, 22.5), (0, 0, 1), 5)                              # tap M12x1
+
+
+def y_home_flag():
+    """2 mm steel target on the spindle holder's end face (towards
+    Yan_Plaka_2), two M3 screws into new tapped holes. The holder, not the
+    carriage plate, is what reaches the side plate first, so the target
+    goes on it. It moves with Z: GRBL homes Z first, so during the Y
+    homing move the holder is Z_HOME_DZ - PULL_OFF higher than in the CAD
+    pose and the target sits in front of the sensor. The sensor screws
+    into a new M12x1 thread in Yan_Plaka_2, face flush with its inside,
+    locked with its nut outside. Shown at the CAD pose (Z not homed)."""
+    x, y = Y_SENSOR
+    y -= Z_HOME_DZ - PULL_OFF
+    p = box(-66.0, -53.0, y - 8, y + 8, HOLDER_END, HOLDER_END + 2)
+    for dy in (-4, 4):
+        p = hole(p, 3.4, (x, y + dy, HOLDER_END), (0, 0, 1), 2)
+    return p
+
+
+def z_home_flag():
+    """2 mm steel target on the spindle holder's top face, two M3 screws
+    into new tapped holes. The holder top is only 10 mm wide, so the flag
+    overhangs it to give the sensor a full 16 mm target. Moves with Z."""
+    x, z = Z_SENSOR
+    p = box(-70.0, -54.0, HOLDER_TOP, HOLDER_TOP + 2, z - 8, z + 8)
+    for dz in (-4, 4):
+        p = hole(p, 3.4, (-62.0, HOLDER_TOP, z + dz), (0, 1, 0), 2)
     return p
 
 
@@ -224,6 +290,9 @@ PARTS = {
     "vacuum_plate_200x200": vacuum_plate,
     "head_yoke_camera": head_yoke,
     "pressure_foot_dustshoe": pressure_foot,
+    "x_limit_bracket": x_limit_bracket,
+    "y_home_flag": y_home_flag,
+    "z_home_flag": z_home_flag,
 }
 
 

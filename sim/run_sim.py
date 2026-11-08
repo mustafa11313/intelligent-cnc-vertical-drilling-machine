@@ -97,7 +97,7 @@ class DaqSim:
         self.rng = random.Random(1)
 
     def banner(self):
-        self.port.write(b"#DAQ,CNC-DAQ-SIM,1.0\r\n")
+        self.port.write(b"#DAQ,CNC-DAQ-SIM,2.1\r\n")
 
     def receive(self, data):
         if b"I" in data:
@@ -127,8 +127,10 @@ class DaqSim:
         ax = 0.01 + self.rng.gauss(0, vib / 3)
         ay = -0.02 + self.rng.gauss(0, vib / 3)
         az = 1.0 + self.rng.gauss(0, vib / 3)
+        # VFD output current in % of rating: magnetising current, more when cutting
+        load = (32.0 if spin else 0.0) + (24.0 if cutting else 0.0) + self.rng.gauss(0, 0.5)
         ms = int((now - self.t0) * 1000)
-        line = format_line(ms, current, round(self.temp1, 2), temp2, ax, ay, az, vib)
+        line = format_line(ms, current, round(self.temp1, 2), temp2, ax, ay, az, vib, max(load, 0.0))
         self.port.write((line + "\r\n").encode())
 
 
@@ -169,7 +171,7 @@ def main(argv=None):
             opened, closed, data = gport.poll_open()
             if opened:
                 time.sleep(0.05)       # like the Nano's bootloader delay, shortened
-                grbl.reset()
+                grbl.reset(power_up=True)
             if data:
                 grbl.receive(data)
             if dport:

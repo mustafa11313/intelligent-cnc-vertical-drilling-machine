@@ -2,12 +2,13 @@
   CNC drilling machine - DAQ board firmware (Arduino Nano, ATmega328P)
 
   Measures and reports 10 times per second:
-    - spindle supply current, true RMS     (SCT-013 + LM358 stage on A0)
+    - spindle supply current, true RMS     (SCT-013-005 on A0, biased to mid-rail)
+    - spindle load, % of VFD rated current (J1000 AM output, divided 2:1, on A1)
     - 2x temperature                        (DS18B20 on one 1-Wire bus, A2)
     - acceleration x/y/z + vibration RMS    (ADXL345 on I2C, A4/A5)
 
   Output line (115200 baud), parsed by app/daq.py:
-    D,<ms>,<I_A>,<T1_C>,<T2_C>,<ax_g>,<ay_g>,<az_g>,<vib_g>*<XX>
+    D,<ms>,<I_A>,<T1_C>,<T2_C>,<ax_g>,<ay_g>,<az_g>,<vib_g>,<load_pct>*<XX>
   XX = XOR of all characters from 'D' up to (not including) '*', in hex.
   A sensor that is missing or failed is reported as "nan". Values are
   never invented or smoothed with random numbers.
@@ -21,7 +22,9 @@
     * Current: the ADC runs free (9.6 kHz) and an interrupt adds up the
       samples and their squares. RMS = standard deviation over the 100 ms
       window (5 mains cycles at 50 Hz), so the DC bias of the op-amp stage
-      cancels by itself and no offset calibration is needed.
+      cancels by itself and no offset calibration is needed. Once every 32
+      conversions the ADC switches to A1 (the VFD load signal, a slow DC
+      level) for one reading, so A0 still gets ~8.4 kHz.
     * Vibration: the ADXL345 samples at 1600 Hz into its 32-entry FIFO. We
       empty the FIFO in bursts, so the 1-Wire temperature reads (which
       block for ~10 ms) never lose accelerometer samples. 1600 Hz covers
@@ -38,29 +41,58 @@
 #include <math.h>
 
 // ----------------------------------------------------------------- pins
-#define PIN_CURRENT      A0     // LM358 output (SCT-013 signal, biased to mid-rail)
+#define PIN_CURRENT      A0     // SCT-013-005 output, biased to mid-rail (2x10k + 10uF)
+#define PIN_LOAD         A1     // J1000 AM output (0-10 V = 0-100 % rated current) via 10k/10k
 #define PIN_ONEWIRE      A2     // DS18B20 data, 4.7k pull-up to 5V
 #define ADXL345_ADDR     0x53   // SDO tied low (0x1D if SDO high)
 
 // ----------------------------------------------------------------- settings
 #define REPORT_MS        100
 #define FW_NAME          "CNC-DAQ"
-#define FW_VERSION       "2.0"
+#define FW_VERSION       "2.1"
 #define EEPROM_MAGIC     0xC7A1
 // Default current calibration: amps per volt RMS at the ADC pin.
-// SCT-013-100 (100 A : 50 mA) into a 33 ohm burden gives 1.65 V at 100 A,
-// i.e. 60.6 A/V, divided by the LM358 stage gain (set this to your circuit).
-// Calibrate with a known load and the K command (see calibration guide).
-#define DEFAULT_A_PER_V  60.6f
+// SCT-013-005 has its burden built in: 5 A gives 1 V rms, i.e. 5 A/V.
+// (The old SCT-013-100 gave only ~10 ADC counts at the spindle's ~3 A.)
+// Fine-tune against a clamp meter with the K command (see calibration guide).
+#define DEFAULT_A_PER_V  5.0f
+// Load: the divider halves the 0-10 V AM signal, so 5 V at the pin = 100 %.
+#define LOAD_PCT_PER_V   20.0f
+#define ADC_CYCLE        32     // conversions per A0/A1 cycle (one A1 reading each)
 
 // ===================================================================== current
 volatile uint16_t adc_n = 0;
 volatile uint32_t adc_sum = 0;
 volatile uint32_t adc_sumsq = 0;
+volatile uint16_t load_n = 0;
+volatile uint32_t load_sum = 0;
 float amps_per_volt = DEFAULT_A_PER_V;
+
+// In free-running mode the next conversion has already started (with the
+// old channel) when this interrupt runs, so a new ADMUX value only applies to
+// the conversion after next. The reading right after each channel change is
+// therefore thrown away, and only readings that are certainly from one
+// channel are used:
+//   step 0: A0 reading, select A1
+//   step 1: in transition, discarded
+//   step 2: A1 reading, select A0
+//   step 3: in transition, discarded
+//   steps 4..31: A0 readings
+volatile uint8_t adc_step = 0;
+
+static inline void adc_select(uint8_t pin) { ADMUX = _BV(REFS0) | ((pin - A0) & 0x07); }
 
 ISR(ADC_vect) {
   uint16_t v = ADC;
+  uint8_t step = adc_step;
+  adc_step = (step + 1) % ADC_CYCLE;
+  if (step == 1 || step == 3) return;
+  if (step == 2) {
+    adc_select(PIN_CURRENT);
+    if (load_n < 1000) { load_n++; load_sum += v; }
+    return;
+  }
+  if (step == 0) adc_select(PIN_LOAD);
   if (adc_n < 4000) {          // keeps sumsq inside 32 bits (4000*1023^2 < 2^32)
     adc_n++;
     adc_sum += v;
@@ -68,12 +100,24 @@ ISR(ADC_vect) {
   }
 }
 
-void adc_start_free_running(uint8_t pin) {
-  uint8_t ch = pin - A0;
-  ADMUX = _BV(REFS0) | (ch & 0x07);                 // AVcc reference, channel
+void adc_start_free_running() {
+  adc_step = 4;
+  adc_select(PIN_CURRENT);                          // AVcc reference
   ADCSRB = 0;                                       // free running trigger
   ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADATE) | _BV(ADIE) |
            _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);    // prescaler 128 -> 9.6 kHz
+}
+
+// Mean of the load signal over the window, in % of VFD rated current, or NAN.
+float load_take_pct() {
+  uint16_t n;
+  uint32_t s;
+  noInterrupts();
+  n = load_n; s = load_sum;
+  load_n = 0; load_sum = 0;
+  interrupts();
+  if (n < 5) return NAN;
+  return (float)s / n * (5.0f / 1023.0f) * LOAD_PCT_PER_V;
 }
 
 // Returns RMS current in A, or NAN if the window was too short.
@@ -283,6 +327,7 @@ void put_float(float v, uint8_t digits) {
 
 void report() {
   float amps = current_take_rms();
+  float load = load_take_pct();
   float mean[3] = {NAN, NAN, NAN}, vib = NAN;
   if (adxl_ok && acc_n >= 4) {
     float var = 0;
@@ -306,7 +351,8 @@ void report() {
   put_float(mean[0], 4); put(",");
   put_float(mean[1], 4); put(",");
   put_float(mean[2], 4); put(",");
-  put_float(vib, 4);
+  put_float(vib, 4); put(",");
+  put_float(load, 1);
   uint8_t cs = 0;
   for (uint8_t i = 0; i < pos; i++) cs ^= line[i];
   line[pos] = 0;
@@ -371,7 +417,7 @@ void setup() {
   adxl_ok = adxl_init();
   n_sensors = ow_search_all();
   identify();
-  adc_start_free_running(PIN_CURRENT);
+  adc_start_free_running();
   if (n_sensors) ds_start_conversion();
   next_report = millis() + REPORT_MS;
 }

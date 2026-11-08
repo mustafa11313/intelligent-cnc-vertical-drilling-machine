@@ -73,3 +73,37 @@ def test_head_camera_calibration_and_alignment():
     pred = align.apply(R, t, design)
     truth = np.array([[h["x"], h["y"]] for h in true_board])
     assert np.abs(pred - truth).max() < 0.03
+
+
+def test_quality_check_with_head_camera():
+    """Hole-by-hole check against the drawing: finds a misplaced hole, a wrong
+    diameter and a missing hole, and measures the others to within a few µm."""
+    from sim.camera_sim import head_view
+    g = FakeGrbl()
+    cal = Calibration.from_scale(MMPX, (1280, 960))
+    offset, rot = (57.6, 0.4), 1.5
+
+    def cam(holes):
+        return lambda: head_view(holes, g.pos, offset=offset, rot_deg=rot, mm_per_px=MMPX)
+
+    scrap = [{"x": 10.0, "y": 10.0, "d": 1.0}]
+    M, c = align.calibrate_head_camera(g, cam(scrap), cal, (10.0, 10.0), (58.0, 0.0), z=10,
+                                       log=lambda s: None)
+    drawing = [(x * 5.0, y * 4.0) for x in range(4) for y in range(3)]
+    drilled = [{"x": x + 0.01, "y": y - 0.008, "d": 1.0} for x, y in drawing]
+    drilled[4]["x"] += 0.25                      # misplaced
+    drilled[7]["d"] = 1.3                        # wrong bit
+    del drilled[10]                              # missing (index 10 of the drawing)
+    log = []
+    results, summary, mosaic = align.inspect_holes(g, cam(drilled), cal, drawing, M, c, z=10,
+                                                   nominal_d=1.0, pos_tol=0.1, d_tol=0.1, log=log.append)
+    bad = sorted(r["index"] for r in results if not r["ok"])
+    assert bad == [4, 7, 10]
+    assert not results[10]["found"]
+    assert abs(results[4]["dx"] - 0.26) < 0.02
+    assert abs(results[7]["d_mm"] - 1.3) < 0.03
+    good = [r for r in results if r["ok"]]
+    assert all(abs(r["dx"] - 0.01) < 0.01 and abs(r["dy"] + 0.008) < 0.01 for r in good)
+    assert all(abs(r["d_mm"] - 1.0) < 0.03 for r in good)
+    assert summary["expected"] == 12 and summary["found"] == 11 and summary["passed"] == 9
+    assert mosaic is not None and mosaic.shape[2] == 3 and len(log) == 12

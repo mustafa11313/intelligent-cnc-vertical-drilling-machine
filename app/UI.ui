@@ -1777,7 +1777,7 @@ QTabBar::tab:selected {
         <property name="styleSheet">
          <string notr="true">#SideIP {
     border: none;
-background-image: url(:/ytulogo/ytulogo.png) stretch;
+background-image: url(:/Icon/ytulogo.png) stretch;
     background-repeat: no-repeat;
     background-position: center;
     background-size: cover;
@@ -2498,7 +2498,7 @@ background-image: url(:/Icon/ytulogo.png) stretch;
         <property name="styleSheet">
          <string notr="true">#SideInfo {
     border: none;
-background-image: url(:/ytulogo/ytulogo.png) stretch;
+background-image: url(:/Icon/ytulogo.png) stretch;
     background-repeat: no-repeat;
     background-position: center;
     background-size: cover;

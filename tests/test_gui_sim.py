@@ -82,6 +82,17 @@ def test_full_session_in_gui(sim):
         assert pump(10, lambda: "Matched" in w.IPresultL.text()), w.IPresultL.text()
         assert "4 within tolerance" in w.IPresultL.text()
 
+        # Head camera: calibrate on hole 1, then the hole-by-hole check against the drawing
+        g = w.link.grbl
+        g.jog_to(x=5.0, y=5.0)
+        assert pump(10, lambda: abs(w.machine["wpos"][0] - 5) < 1e-3 and abs(w.machine["wpos"][1] - 5) < 1e-3)
+        w._calibrate_head_camera()
+        assert pump(30, lambda: w._head_camera_ready()), popups
+        w.run_head_qc(ask=False)
+        assert pump(60, lambda: w.IPresultL.text().startswith("Quality check (head camera")), \
+            (w.IPresultL.text(), popups)
+        assert "4 of 4 holes OK" in w.IPresultL.text(), w.IPresultL.text()
+
         holes = w.db.get_holes(w.session_id)
         assert [h["status"] for h in holes] == ["Done"] * 4
         assert all(h["measured_d"] is not None for h in holes)

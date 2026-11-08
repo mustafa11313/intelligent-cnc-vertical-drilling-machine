@@ -188,6 +188,8 @@ class GrblClient:
         self._banner_event = threading.Event()
         self._last_alarm = None
         self._sync_replies = None              # collects text lines for query()
+        self.homed = False                     # machine position known from the switches
+        self._keep_homed = False               # next banner is a reset we made while stopped
 
     # ------------------------------------------------------------------ setup
     def connect(self, timeout=4.0):
@@ -273,7 +275,19 @@ class GrblClient:
         """Stop everything immediately. GRBL turns the spindle off, empties
         its buffers and, if an axis was moving, enters ALARM 3."""
         self.clear_queue()
+        # A reset while stopped keeps GRBL's position, so the machine stays homed.
+        self._keep_homed = self.state.substate in ("Idle", "Hold:0", "Door:0", "Door:1")
         self.realtime(RT_SOFT_RESET)
+
+    def home(self, timeout=120.0):
+        """Run GRBL's homing cycle ($H) and wait for it to finish. Each axis
+        finds its switch and backs off by $27, so machine coordinates are then
+        repeatable to the switch accuracy and the work offset (G54, kept in
+        GRBL's EEPROM) is valid again."""
+        self.homed = False
+        self.query("$H", timeout=timeout)
+        self.wait_idle(timeout=5.0)        # so callers never see the stale 'Home' state
+        self.homed = True
 
     def unlock(self):
         self.send("$X")
@@ -303,6 +317,29 @@ class GrblClient:
         if axes:
             self.send("G10 L20 P1 " + axes)
 
+    @property
+    def door_open(self):
+        """The cover door is open now (GRBL Door:1/2), or was and needs a cycle start (Door:0)."""
+        return self.state.state == "Door"
+
+    def _door_opened(self, before):
+        # The door switch also drops K1, so the steppers lose power. If an axis was
+        # moving it coasts on unpowered: the position (and so the homed state) is lost.
+        moving = before in ("Run", "Jog", "Home")
+        if moving:
+            self.homed = False
+        if self.on_message:
+            self.on_message("DOOR: cover door opened" +
+                            (" while moving. Motor power was cut: home again before the next job"
+                             if moving else ". Spindle and motor power are off"))
+
+    def door_resume(self):
+        """After the door is closed (Door:0): cycle start, so GRBL leaves the Door state.
+        Press Start on the electrical box too, to switch K1 back on."""
+        if self.state.substate != "Door:0":
+            raise GrblError("Close the cover door first")
+        self.cycle_start()
+
     def wait_idle(self, timeout=60.0, poll=0.05):
         """Block until nothing is queued and GRBL reports Idle."""
         end = time.monotonic() + timeout
@@ -313,6 +350,8 @@ class GrblClient:
                 return True
             if self.state.state == "Alarm":
                 raise GrblError(f"Alarm while waiting: {self._last_alarm}")
+            if self.state.state == "Door":
+                raise GrblError("Cover door opened")
             time.sleep(poll)
         return False
 
@@ -419,7 +458,10 @@ class GrblClient:
         if line.startswith("<"):
             st = parse_status(line)
             if st:
+                before = self.state.state
                 self.state.update(st)
+                if st["state"] == "Door" and before != "Door":
+                    self._door_opened(before)
                 if self.on_status:
                     self.on_status(self.state)
             return
@@ -449,6 +491,9 @@ class GrblClient:
                 self._cv.notify_all()
             first = not self._banner_event.is_set()
             self._banner_event.set()
+            if not self._keep_homed:
+                self.homed = False
+            self._keep_homed = False
             if self.on_message:
                 self.on_message(line)
             if not first and self.on_reset:
@@ -458,6 +503,8 @@ class GrblClient:
             code = int(line.split(":", 1)[1])
             self._last_alarm = f"ALARM {code}: {ALARM_TEXT.get(code, '')}"
             self.state.state = "Alarm"
+            if code != 2:                       # a soft limit stops before moving: position kept
+                self.homed = False
             if self.on_message:
                 self.on_message(self._last_alarm)
             return

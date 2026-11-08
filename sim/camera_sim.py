@@ -69,6 +69,41 @@ def render_from_sim(sim_dir, bit_diameter, mm_per_px=0.02, **kw):
     return img
 
 
+# The head camera (an Ø8 endoscope on the head yoke, cad/upgrade.py) looks straight down,
+# ~58 mm from the spindle. The simulated one is mounted slightly off, as a real one would be,
+# so "Calibrate head camera" has something to find.
+HEAD_OFFSET = (57.6, 0.4)       # machine X/Y from the spindle to the image centre
+HEAD_ROT_DEG = 1.5              # camera turned 1.5° in its clamp
+
+
+def head_view(holes, spindle_xy, offset=HEAD_OFFSET, rot_deg=HEAD_ROT_DEG, mm_per_px=0.02,
+              size=(1280, 960), seed=0):
+    """What the head camera sees with the spindle at spindle_xy (work mm):
+    holes = [{x, y, d}] in work mm."""
+    q = np.asarray(spindle_xy, float)[:2] + np.asarray(offset, float)
+    a = math.radians(rot_deg)
+    rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+    half_w, half_h = size[0] / 2 * mm_per_px + 5, size[1] / 2 * mm_per_px + 5
+    near = []
+    for h in holes:
+        r = rot @ (np.array([h["x"], h["y"]]) - q)
+        if abs(r[0]) < half_w and abs(r[1]) < half_h:
+            near.append({"x": float(r[0]), "y": float(r[1]), "d": h["d"]})
+    img, _ = render(near, mm_per_px=mm_per_px, size=size, origin_px=(size[0] / 2, size[1] / 2),
+                    seed=seed + len(near))
+    return img
+
+
+def head_view_from_sim(sim_dir, spindle_xy, bit_diameter, mm_per_px=0.02, **kw):
+    """Head camera image of the holes the simulated machine really drilled."""
+    path = os.path.join(sim_dir, "drilled_holes.json")
+    holes = []
+    if os.path.exists(path):
+        with open(path) as f:
+            holes = [{"x": h["x"], "y": h["y"], "d": bit_diameter} for h in json.load(f)]
+    return head_view(holes, spindle_xy, mm_per_px=mm_per_px, **kw)
+
+
 def checkerboard(cols=9, rows=6, square_mm=5.0, mm_per_px=0.05, size=(1280, 960)):
     """Image of a flat checkerboard, for testing calibration."""
     w, h = size

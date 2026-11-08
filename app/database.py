@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS samples (
     ay_g        REAL,
     az_g        REAL,
     vib_g       REAL,
+    load_pct    REAL,
     x           REAL,
     y           REAL,
     z           REAL,
@@ -67,7 +68,7 @@ CREATE INDEX IF NOT EXISTS holes_session ON holes(session_id, seq);
 """
 
 SAMPLE_COLUMNS = ("t", "current_a", "temp1_c", "temp2_c", "ax_g", "ay_g", "az_g",
-                  "vib_g", "x", "y", "z", "spindle", "state")
+                  "vib_g", "load_pct", "x", "y", "z", "spindle", "state")
 
 
 class Database:
@@ -81,6 +82,9 @@ class Database:
         self.lock = threading.RLock()
         with self.lock:
             self.conn.executescript(SCHEMA)
+            cols = {r[1] for r in self.conn.execute("PRAGMA table_info(samples)")}
+            if "load_pct" not in cols:          # databases from before firmware 2.1
+                self.conn.execute("ALTER TABLE samples ADD COLUMN load_pct REAL")
             self.conn.commit()
 
     def close(self):
@@ -226,7 +230,7 @@ class SampleLogger:
         row = (round(time.monotonic() - self.t0, 3),
                s.current if s else None, s.temp1 if s else None, s.temp2 if s else None,
                s.ax if s else None, s.ay if s else None, s.az if s else None,
-               s.vib if s else None,
+               s.vib if s else None, s.load if s else None,
                round(x, 3), round(y, 3), round(z, 3), 1 if m["spindle_on"] else 0, m["state"])
         with self._lock:
             self._rows.append(row)

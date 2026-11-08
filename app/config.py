@@ -17,7 +17,7 @@ DEFAULTS = {
         "baud": 115200,
     },
     "machine": {
-        "travel_mm": [225.0, 185.0, 60.0],   # from the CAD (cad/README.md), minus 5 mm; confirm on the machine
+        "travel_mm": [225.0, 150.0, 60.0],   # from the CAD (cad/README.md) with margin; confirm on the machine
         "jog_feed": 600.0,
         "jog_step": 1.0,
         "z_jog_feed": 300.0,
@@ -30,7 +30,18 @@ DEFAULTS = {
             100: 800, 101: 800, 102: 800,
             110: 1000, 111: 1000, 112: 500,
             120: 50, 121: 50, 122: 50,
-            130: 225, 131: 185, 132: 60,
+            130: 225, 131: 150, 132: 60,
+        },
+        # Limit/home switches (M12 inductive, electronics/README.md 3.5). Leave
+        # disabled until the switches are fitted and tested: with homing on, GRBL
+        # starts locked and only $H (or $X) frees it.
+        "homing": {
+            "enabled": False,
+            "required_before_job": True,     # refuse to drill until the machine has homed
+            # Merged into grbl_settings by "Apply machine settings" when enabled.
+            # $23=0 homes to the + end of each axis; set the bit of any axis whose
+            # switch is at its - end (X=1, Y=2, Z=4).
+            "grbl_settings": {20: 1, 21: 1, 22: 1, 23: 0, 24: 25, 25: 500, 26: 250, 27: 1.0},
         },
     },
     "drilling": {
@@ -99,6 +110,18 @@ class Config(dict):
             yaml.safe_dump(dict(self), f, sort_keys=False)
 
 
+def grbl_settings(cfg):
+    """The $ settings to write: the machine settings, plus the homing and
+    limit settings when homing is enabled (otherwise those are forced off)."""
+    m = cfg["machine"]
+    out = dict(m["grbl_settings"])
+    if m["homing"]["enabled"]:
+        out.update(m["homing"]["grbl_settings"])
+    else:
+        out.update({20: 0, 21: 0, 22: 0})
+    return out
+
+
 def candidate_paths():
     paths = []
     if os.environ.get("CNC_CONFIG"):
@@ -118,6 +141,8 @@ def load():
             # YAML may load settings keys as strings
             gs = cfg["machine"]["grbl_settings"]
             cfg["machine"]["grbl_settings"] = {int(k): float(v) for k, v in gs.items()}
+            hs = cfg["machine"]["homing"]["grbl_settings"]
+            cfg["machine"]["homing"]["grbl_settings"] = {int(k): float(v) for k, v in hs.items()}
             return cfg
     cfg = Config(copy.deepcopy(DEFAULTS))
     cfg.path = candidate_paths()[-1]

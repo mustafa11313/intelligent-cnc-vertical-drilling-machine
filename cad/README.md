@@ -47,14 +47,14 @@ moves along world Z, which is machine Y. The spindle moves along world Y, which 
 | Axis | Travel | What stops it |
 |---|---|---|
 | X | **232 mm** (table centre −154 to +78 relative to the model pose) | back: nut block reaches the coupler. Front: brass nut reaches the end of the 255 mm screw |
-| Y | **191 mm** | the 120 mm carriage plate meets the side plates (5.5 mm gaps either side) |
+| Y | **159 mm** (72 towards `Yan_Plaka_2`, 88 towards `Yan_Plaka_1` from the model pose) | the 152 mm wide spindle holder (`Spindle_Tutucu`) meets the side plates, whose inner faces are 311.5 mm apart. An earlier version of this table said 191 mm; that is where the 120 mm carriage plate alone would stop |
 | Z | **67 mm** (58 up, 9 down) | up: spindle top reaches the motor plate. Down: the Z blocks are 9 mm from the ends of their rails |
 
 - **Work area.** The whole 200 mm table length can pass under the spindle in X. In Y the spindle covers
-  191 of the table's 300 mm. The 150 × 200 pocket sits inside that, about 4 mm short at each Y end. So the
-  drillable area is roughly **200 × 190 mm**.
-- **App defaults.** The app and GRBL defaults are set to 225 / 185 / 60 mm, which leaves about 5 mm of margin
-  (`app/config.py`, `firmware/grbl/README.md`).
+  159 of the table's 300 mm, from world z −213.0 to −53.5. The 150 × 200 pocket (z −208.2 to −58.2) fits inside
+  that with about 5 mm to spare at each end. So the drillable area is roughly **200 × 155 mm**.
+- **App defaults.** The app and GRBL defaults are set to 225 / 150 / 60 mm, which leaves a margin for the home switch
+  pull-off (`app/config.py`, `firmware/grbl/README.md`).
 - **Z at the bottom.** Nothing hard stops Z at the bottom. If Z is driven 9 mm below the model's pose, the Z
   blocks run off their rails and drop their balls. That is one more reason for a Z limit switch or soft limits.
 
@@ -132,6 +132,8 @@ All three axes use the same Ø22-flange brass Tr8x2 nut. These have 0.1–0.3 mm
   coordinate is expensive.
 - `limit_sensor_bracket_M12.step` holds an M12 inductive sensor on any profile slot (M8 T-nut, ±5 mm adjust).
   The wiring is in `../electronics/README.md`.
+- The placed home switches for all three axes (brackets, targets and trigger points, checked against the model)
+  are in `UPGRADE.md`, *Home switches*.
 
 ### 8. Smaller points
 - **Dust.** FR4 dust is glass fibre. Fit a brush-skirt dust shoe around the ER16 nut, which is Ø28 at the

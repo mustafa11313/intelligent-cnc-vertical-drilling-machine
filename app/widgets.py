@@ -19,6 +19,8 @@ STATUS_COLORS = {
     "Done": QtGui.QColor(30, 160, 60),
     "Skipped": QtGui.QColor(170, 170, 170),
     "Failed": QtGui.QColor(120, 0, 160),
+    "QC OK": QtGui.QColor(0, 120, 200),        # checked by the head camera: matches the drawing
+    "QC fail": QtGui.QColor(230, 0, 140),      # out of tolerance or missing
 }
 
 

@@ -1,0 +1,13 @@
+Cut list (mm)
+  4 x  690.0  20x20 profile, frame verticals
+  4 x  530.0  20x20 profile, frame along X (front-back)
+  5 x  530.0  20x20 profile, frame along Z (left-right) incl. back middle rail
+  2 x  690.0  20x20 profile, door verticals
+  2 x  530.0  20x20 profile, door horizontals
+  total profile 9.97 m: buy 6 x 2 m bars, cut each into 690 + 530 + 530 (one 530 spare)
+  2 x  540.0 x  660.0  polycarbonate 4 mm, sides
+  1 x  100.0 x  540.0  polycarbonate 4 mm, back low
+  1 x  550.0 x  540.0  polycarbonate 4 mm, back high
+  1 x  660.0 x  540.0  polycarbonate 4 mm, door
+  1 x  570.0 x  570.0  polycarbonate 6 mm, lid
+Outside size: 590 (X, with door) x 570 (Z) x 716 high

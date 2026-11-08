@@ -20,7 +20,7 @@ class Hole:
     y: float
     diameter: float = None      # from DXF circles, if known
     source: str = "manual"
-    status: str = "Waiting"     # Waiting / Drilling / Done / Skipped / Failed
+    status: str = "Waiting"     # Waiting / Drilling / Done / Skipped / Failed / QC OK / QC fail
 
     def key(self):
         return (round(self.x, 2), round(self.y, 2))

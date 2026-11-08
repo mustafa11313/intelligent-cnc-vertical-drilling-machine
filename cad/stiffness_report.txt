@@ -1,0 +1,48 @@
+Drill tip deflection, 20 N thrust and 5 N side load. Block 100 N/µm, profile It 6 cm4.
+
+== BEFORE: spindle 86 mm in front of the Y ball track, 120 mm in front of the profile axis; tip 198 mm below them
+  20 N thrust: depth  39.8 µm, sideways  73.1 µm
+     18.26  42.13  Y carriage roll on its block(s)
+     14.50  23.87  cross profile twist
+      2.39   7.10  Z blocks pitch
+      4.44   0.00  X table rocks on its blocks (hole 75 mm off centre)
+      0.22   0.00  cross profile bending (90 direction, ends pinned)
+  5 N side load in X: depth   0.0 µm, sideways  39.6 µm
+      0.00  24.30  Y carriage roll on its block(s)
+      0.00   9.82  cross profile twist
+      0.00   5.28  Z blocks pitch
+      0.00   0.18  cross profile bending (45 direction, ends pinned)
+
+== AFTER: spindle 92 mm in front of the Y ball track, 126 mm in front of the profile axis; tip 228 mm below them
+  20 N thrust: depth  20.2 µm, sideways  39.5 µm
+     15.98  28.85  cross profile twist
+      2.39   7.10  Z blocks pitch
+      1.44   3.58  Y carriage roll on its block(s)
+      0.22   0.00  cross profile bending (90 direction, ends pinned)
+      0.21   0.00  X table rocks on its blocks (hole 75 mm off centre)
+  5 N side load in X: depth   0.0 µm, sideways  20.7 µm
+      0.00  13.02  cross profile twist
+      0.00   5.28  Z blocks pitch
+      0.00   2.22  Y carriage roll on its block(s)
+      0.00   0.18  cross profile bending (45 direction, ends pinned)
+
+(columns: depth µm, sideways µm)
+
+AFTER + torsion box behind the cross profile (6 mm Al plates, 96 x 96 cell, 50 % effective): 20 N thrust moves the tip sideways 11 µm
+
+Thrust pushes the tip sideways by 73 µm before and 40 µm after (1.8x less). That is the error that moves a hole while the bit enters.
+
+What the numbers say
+- Before, the single Y block was the weak point: thrust rolled the whole head about the Y rail,
+  and the tip, ~200 mm below it, swung sideways. Two rails 45 mm apart fix that.
+- After, the cross profile's twist is the largest term, and it grows with the profile's low
+  torsion constant and the longer lever (the Z unit is 45 mm lower). If holes still walk:
+  a 10 mm plate bolted across the profile's back face, or a second profile behind it, turns it
+  into a closed box and cuts the twist by roughly 5-10x (router/stiffness.py has the method).
+- The Z blocks are the next term for side loads. A second block on each Z rail (they are now
+  195 mm long) would cut that term by ~10x.
+- These are elastic numbers. Play is not in them: backlash in the nuts (now anti-backlash),
+  a stepper's wave-washer float (gone: Z thrust now goes into the 608 pair), loose gibs.
+- Depth: with gravity (~30 N for the Z unit) larger than the thrust of PCB bits, the Z screw
+  load never reverses, so the anti-backlash nut is not needed for depth. Above ~25 N of thrust
+  it is, and the nut's spring should push so that the solid half carries the upward thrust.

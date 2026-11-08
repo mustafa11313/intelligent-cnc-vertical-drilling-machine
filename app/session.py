@@ -17,7 +17,8 @@ from .jobs import generate_program
 class SessionRunner:
     IDLE, RUNNING, PAUSED, STOPPING, FINISHED = "idle", "running", "paused", "stopping", "finished"
 
-    def __init__(self, grbl, holes, params, on_hole=None, on_finished=None, on_log=None):
+    def __init__(self, grbl, holes, params, on_hole=None, on_finished=None, on_log=None,
+                 require_homed=False):
         """on_hole(index, status) with status 'Drilling' or 'Done'.
         on_finished(result, message) with result 'completed', 'cancelled',
         'aborted' or 'failed'."""
@@ -27,6 +28,7 @@ class SessionRunner:
         self.on_hole = on_hole
         self.on_finished = on_finished
         self.on_log = on_log
+        self.require_homed = require_homed
         self.state = self.IDLE
         self.done_count = 0
         self.started_at = None
@@ -41,6 +43,11 @@ class SessionRunner:
             raise RuntimeError("Motion controller not connected")
         if g.state.state == "Alarm":
             raise RuntimeError("Machine is in ALARM. Unlock it and check the work zero first")
+        if g.state.state == "Door":
+            raise RuntimeError("The cover door is open. Close it, press Start on the electrical box, "
+                               "then 'Unlock alarm' on the System tab")
+        if self.require_homed and not g.homed:
+            raise RuntimeError("Home the machine first (System tab, 'Home machine')")
         if g.state.state not in ("Idle",):
             raise RuntimeError(f"Machine must be Idle to start (now {g.state.state})")
         if not self.holes:
@@ -131,6 +138,18 @@ class SessionRunner:
     def handle_alarm(self, text):
         if self.state in (self.RUNNING, self.PAUSED):
             self._finish("aborted", text)
+
+    def handle_door(self, text):
+        """Cover door opened: K1 has already cut spindle and motor power in hardware.
+        The job cannot carry on, so flush what GRBL still holds (otherwise a cycle
+        start after closing the door would run the rest of the program)."""
+        if self.state not in (self.RUNNING, self.PAUSED, self.STOPPING):
+            return
+        self._expect_reset = True
+        self.grbl.soft_reset()
+        self._finish("aborted", f"Cover door opened: job stopped after {self.done_count} of "
+                                f"{len(self.holes)} holes. Close the door, press Start, home the machine, "
+                                "then check the work zero")
 
     def handle_disconnect(self, reason):
         if self.state in (self.RUNNING, self.PAUSED, self.STOPPING):

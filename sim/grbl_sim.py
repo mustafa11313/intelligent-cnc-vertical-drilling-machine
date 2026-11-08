@@ -3,12 +3,19 @@
 It speaks the same serial protocol as a Nano running GRBL: line buffering
 with a 128-byte receive buffer, a 15-block planner, 'ok'/'error:N' replies,
 real-time commands (? ! ~ Ctrl-X jog-cancel), status reports, $ settings,
-G10 L20 work offsets, jogging, alarms on reset-while-moving.
+G10 L20 work offsets, jogging, alarms on reset-while-moving, homing ($H),
+hard limits and the safety door input (cover door switch on A1).
 
 Motion is simulated in (scaled) real time with trapezoidal velocity
 profiles, so positions in status reports change the way the real machine's
-do. It also models the physical machine a little: lead screw backlash and
-the holes the drill actually makes, which GRBL itself can't know about.
+do. It also models the physical machine a little: lead screw backlash, the
+holes the drill actually makes, and where the machine really is relative to
+its limit switches, none of which GRBL itself can know about.
+
+Limit switches sit at the positive end of each axis (GRBL's default homing
+direction, $23=0). The physical position `phys` is 0 at a switch's trigger
+point and negative inside the travel. At power-up GRBL believes it is at 0,
+wherever the machine really is, until it homes.
 That lets the tests check hole position accuracy end to end.
 
 It is not a cycle-accurate copy of GRBL. Junction blending, arc moves and
@@ -98,7 +105,7 @@ class GrblSim:
     output with the `write` callback, and call tick() regularly."""
 
     def __init__(self, write, settings=None, backlash=(0.0, 0.0, 0.0),
-                 board_top_z=0.0, holes_file=None):
+                 board_top_z=0.0, holes_file=None, start_phys=(-60.0, -50.0, -15.0)):
         self.write_raw = write
         self.settings = dict(DEFAULT_SETTINGS)
         if settings:
@@ -110,10 +117,14 @@ class GrblSim:
         self.mpos = [0.0, 0.0, 0.0]          # commanded (what GRBL believes)
         self.actual = [0.0, 0.0, 0.0]        # physical tool position (backlash)
         self.wco = [0.0, 0.0, 0.0]           # G54 offset
+        self.phys_offset = list(start_phys)  # physical position minus `actual` (unknown to GRBL)
+        self.critical = False                # hard-limit alarm: needs a reset first
         self.drilled = []                    # [{x, y, depth}] in work coords
         self.overflows = 0                   # client exceeded 128-byte buffer
         self.lines_received = 0
         self._cut = None
+        self.door_open = False               # cover door switch (physical, survives resets)
+        self._door_spindle = 0
         self._power_on()
 
     # ------------------------------------------------------------- lifecycle
@@ -135,12 +146,25 @@ class GrblSim:
         self.wco_dirty = True
         self.homing_until = None
 
-    def reset(self, banner=True):
-        """Ctrl-X soft reset, or the DTR reset when a client opens the port."""
+    def reset(self, banner=True, power_up=False):
+        """Ctrl-X soft reset, or (power_up=True) the DTR reset when a client
+        opens the port, which restarts the Nano: GRBL then believes it is at
+        machine 0 and, with homing enabled, starts locked until $H."""
         with self.lock:
             moving = self.current is not None or bool(self.planner)
             alarm = moving or self.state == "Alarm"
+            if self.homing_until is not None:
+                self.homing_until = None
+                alarm = True
+            if power_up:
+                self.phys_offset = self.phys
+                self.mpos = [0.0, 0.0, 0.0]
+                self.actual = [0.0, 0.0, 0.0]
+                alarm = bool(self.settings.get(22))
+            self.critical = False
             self._power_on(alarm=alarm)
+            if not alarm and self.door_open:
+                self._enter_door()
             if banner:
                 self._out("")
                 self._out(VERSION)
@@ -164,7 +188,14 @@ class GrblSim:
                         self.hold = True
                         self.state = "Hold:0"
                 elif c == b"~":
-                    if self.hold:
+                    if self.state == "Door:0":
+                        self.hold = False
+                        self.spindle = self._door_spindle if (self.current or self.planner) else 0
+                        self._door_spindle = 0
+                        self.state = "Run" if (self.current or self.planner) else "Idle"
+                    elif self.state.startswith("Door"):
+                        pass                  # door still open: GRBL ignores cycle start
+                    elif self.hold:
                         self.hold = False
                         self.state = "Run" if (self.current or self.planner) else "Idle"
                 elif c == b"\x18":
@@ -223,6 +254,8 @@ class GrblSim:
 
     # -------------------------------------------------------------- execute
     def _execute(self, line):
+        if self.critical:
+            return "error:9"              # hard limit: GRBL waits for a reset
         if line.startswith("$"):
             return self._dollar(line)
         if self.state == "Alarm":
@@ -259,9 +292,15 @@ class GrblSim:
                 self._out("[MSG:Caution: Unlocked]")
             return "ok"
         if line == "$H":
+            if self.state.startswith("Door"):
+                return "error:8"          # only from Idle or Alarm
             if not self.settings.get(22):
                 return "error:5"          # homing not enabled
-            self.homing_until = self.sim_time + 2.0
+            # Z homes first, then X and Y together, then each axis backs off
+            p = self.phys
+            seek, feed, po = self.settings[25] / 60.0, self.settings[24] / 60.0, self.settings[27]
+            dist = abs(p[2]) + max(abs(p[0]), abs(p[1]))
+            self.homing_until = self.sim_time + dist / seek + 2 * (2 * po / feed)
             self.state = "Home"
             return None                   # ok sent when homing completes
         if line.startswith("$J="):
@@ -488,6 +527,7 @@ class GrblSim:
                 po = self.settings[27]
                 self.mpos = [-po, -po, -po]
                 self.actual = list(self.mpos)
+                self.phys_offset = [0.0, 0.0, 0.0]
                 self.state = "Idle"
                 self._out("ok")
             if self.dwell_until is not None and now >= self.dwell_until:
@@ -506,6 +546,8 @@ class GrblSim:
                     self.current.t += step
                     remaining -= step
                     self._set_mpos(self.current.position())
+                    if self._hard_limit_hit():
+                        break
                     if self.current.done:
                         self._set_mpos(self.current.end)
                         self.current = None
@@ -514,6 +556,75 @@ class GrblSim:
             elif self.state == "Hold:0":
                 self.state = "Hold:0"
             self._process_lines()
+
+    @property
+    def phys(self):
+        return [a + o for a, o in zip(self.actual, self.phys_offset)]
+
+    def switches(self):
+        """Pressed inputs as GRBL's Pn: letters: limit switches, and D for the door."""
+        pins = "".join(a for a, p in zip("XYZ", self.phys) if p >= -1e-6)
+        return pins + ("D" if self.door_open else "")
+
+    # ------------------------------------------------------------ cover door
+    def set_door(self, is_open):
+        """Open or close the cover door. The switch has two NC contacts: one drops
+        the contactor K1 (spindle and stepper power off at once), the other is
+        GRBL's safety door input. GRBL then holds, and resumes only after the door
+        is closed and it gets a cycle start (~). A motor that loses power while
+        moving coasts a little, so the machine is no longer where GRBL thinks."""
+        with self.lock:
+            if is_open == self.door_open:
+                return
+            self.door_open = is_open
+            if is_open:
+                if self.homing_until is not None:
+                    self.homing_until = None
+                    self.state = "Alarm"
+                    self._out("ALARM:7")
+                    return
+                if self.current is not None and not self.hold:
+                    v = self.current.velocity()
+                    coast = v * v / (2 * 4 * self.current.a)      # unpowered: stops within ~1/4 the decel distance
+                    for i in range(3):
+                        self.phys_offset[i] += self.current.unit[i] * max(coast, 0.05)
+                if self.state != "Alarm":
+                    self._enter_door()
+            elif self.state.startswith("Door"):
+                self.state = "Door:0"
+
+    def _enter_door(self):
+        self.hold = True
+        if self.spindle:
+            self._door_spindle = self.spindle
+        self.spindle = 0
+        self.state = "Door:1"
+        self._out("[MSG:Check Door]")
+
+    def _hard_limit_hit(self):
+        """With $21=1 a switch stops everything at once: ALARM 1, and GRBL
+        accepts nothing until a reset. The machine stops on the switch."""
+        p = self.phys
+        hit = [i for i in range(3) if p[i] > 0]
+        if not hit:
+            return False
+        if not self.settings[21]:
+            # No hard limits: GRBL keeps counting steps but the axis is against its
+            # end and the motor skips. The machine is now off from where GRBL thinks.
+            for i in hit:
+                self.phys_offset[i] = -self.actual[i]
+            return False
+        for i in hit:                       # pulses stop at once: GRBL and the axis stop on the switch
+            self.actual[i] = -self.phys_offset[i]
+            self.mpos[i] = self.actual[i]
+        self.current = None
+        self.planner.clear()
+        self.hold = False
+        self.state = "Alarm"
+        self.critical = True
+        self._out("ALARM:1")
+        self._out("[MSG:Reset to continue]")
+        return True
 
     def _set_mpos(self, pos):
         self.mpos = list(pos)
@@ -565,6 +676,9 @@ class GrblSim:
             acc += "F"
         if acc:
             parts.append("A:" + acc)
+        pins = self.switches()
+        if pins:
+            parts.append("Pn:" + pins)
         return "<" + "|".join(parts) + ">"
 
     def snapshot(self):

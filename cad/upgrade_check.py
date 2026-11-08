@@ -90,6 +90,14 @@ def bought_parts():
     parts.append(("endoscope camera", U.cyl(8, (37, 190 + h, yc + 25), (0, 1, 0), 50)))
     parts.append(("PCB bit 1.0 mm", U.cyl(1.0, (-21, 126.3 + h, yc), (0, 1, 0), 8)))
     parts.append(("PCB bit shank", U.cyl(3.175, (-21, 134.3 + h, yc), (0, 1, 0), 30)))
+    # home sensors: M12 body 55 mm from the face, lock nut outside the part it screws into
+    (xx, xy), (yx, yy), (zx, zz) = U.X_SENSOR, U.Y_SENSOR, U.Z_SENSOR
+    parts.append(("X home sensor", U.cyl(12, (xx, xy, 20.0), (0, 0, 1), 55)))
+    parts.append(("X sensor nut", U.cyl(20, (xx, xy, 27.5), (0, 0, 1), 5)))
+    parts.append(("Y home sensor", U.cyl(12, (yx, yy, 22.5), (0, 0, 1), 55)))
+    parts.append(("Y sensor nut", U.cyl(20, (yx, yy, 32.5), (0, 0, 1), 5)))
+    parts.append(("Z home sensor", U.cyl(12, (zx, 455.0, zz), (0, 1, 0), 55)))
+    parts.append(("Z sensor nut", U.cyl(20, (zx, 475.0, zz), (0, 1, 0), 5)))
     return parts
 
 
@@ -116,7 +124,7 @@ def main(xt_path):
         old.append((inst.path, [p + off for p in inst.polylines()]))
 
     new = {n: fn() for n, fn in U.PARTS.items()}
-    for n in ("head_yoke_camera", "pressure_foot_dustshoe"):          # these move with Z
+    for n in ("head_yoke_camera", "pressure_foot_dustshoe", "z_home_flag", "y_home_flag"):   # these move with Z
         new[n] = new[n].translate((0, Z_HOVER, 0))
     bought = bought_parts()
 
@@ -132,6 +140,8 @@ def main(xt_path):
                 continue
             if name.startswith(("HGR15", "HGH15CA", "Tr8x2")) and leaf.startswith(("HGW", "HGR", "Vidal")):
                 continue                                              # stand-in boxes wrap their rail/nut
+            if name.startswith("Y home sensor") and leaf.startswith("Yan_Plaka_2"):
+                continue                                              # screwed into its new thread in the plate
             pts = np.vstack(polys)
             pts = pts[np.all((pts > lo) & (pts < hi), axis=1)]
             if not len(pts):
@@ -142,6 +152,44 @@ def main(xt_path):
                 print(f"  {name} <-> {path}: {len(hits)} points, e.g. {np.round(hits[0], 1)}")
     if clean:
         print("  none")
+
+    # new parts against each other (sensors, flags, brackets, stand-ins)
+    print("New parts against each other (common volume > 1 mm3):")
+    allnew = list(new.items()) + bought
+    expected = {("X home sensor", "x_limit_bracket"), ("X sensor nut", "x_limit_bracket"),
+                ("X home sensor", "X sensor nut"), ("Y home sensor", "Y sensor nut"),
+                ("Z home sensor", "Z sensor nut"), ("Z home sensor", "z_top_plate_608x2")}
+    wraps = (("HGR15", "HGH15CA"), ("Tr8x2", "KFL08"))      # blocks ride on rails, screws pass through bearings
+    found = False
+    for i, (na, sa) in enumerate(allnew):
+        ba = sa.val().BoundingBox()
+        for nb, sb in allnew[i + 1:]:
+            bb = sb.val().BoundingBox()
+            if (ba.xmax < bb.xmin or bb.xmax < ba.xmin or ba.ymax < bb.ymin or bb.ymax < ba.ymin
+                    or ba.zmax < bb.zmin or bb.zmax < ba.zmin):
+                continue
+            if (na, nb) in expected or (nb, na) in expected:
+                continue
+            if any((na.startswith(a) and nb.startswith(b)) or (na.startswith(b) and nb.startswith(a))
+                   for a, b in wraps):
+                continue
+            v = sa.intersect(sb).val().Volume()
+            if v > 1.0:
+                found = True
+                print(f"  {na} <-> {nb}: {v:.0f} mm3")
+    if not found:
+        print("  none beyond the expected (sensors in their threads)")
+
+    # home switch gaps at the trigger point, from the part geometry
+    yf = new["y_home_flag"].translate((0, -Z_HOVER, 0)).val().BoundingBox()
+    zf = new["z_home_flag"].translate((0, -Z_HOVER, 0)).val().BoundingBox()
+    zt = new["z_top_plate_608x2"].val().BoundingBox()
+    zgap = zt.ymin - (zf.ymax + U.Z_HOME_DZ)
+    ygap = 22.5 - (yf.zmax + U.Y_HOME_DY)
+    yc = (yf.ymin + yf.ymax) / 2 + U.Z_HOME_DZ - U.PULL_OFF
+    print(f"Home gaps at trigger: Z {zgap:.2f} mm, Y {ygap:.2f} mm "
+          f"(Y target centre at y {yc:.1f} after Z homes, sensor at y {U.Y_SENSOR[1]:.1f}); "
+          f"Y hard stop {U.Y_TRAVEL_PLUS - U.Y_HOME_DY:.1f} mm past the trigger")
 
     # ---------------------------------------------------------------- draw
     fig = plt.figure(figsize=(20, 15))

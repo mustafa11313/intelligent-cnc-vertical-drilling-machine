@@ -45,8 +45,23 @@ the X rails: loosen the table rails, tap them square, and re-check.
 
 ## 6. Travel and limits
 Jog each axis carefully to both ends (10 mm steps, then 1 mm). Measure the usable travel and set
-`$130-$132`, and also `machine.travel_mm` in `config.yaml`. After the limit switches are fitted, set `$21=1`, `$22=1`,
-`$20=1` and test homing (`$H` in the console) with a hand on the E-stop.
+`$130-$132`, and also `machine.travel_mm` in `config.yaml`. The CAD gives about 232 / 159 / 67 mm (225 / 150 / 60 in
+the defaults).
+
+**After the home switches are fitted** (`cad/UPGRADE.md`, *Home switches*):
+1. With the machine powered but not homing, open the console and send `?`. Hold a steel object at each sensor in turn;
+   its LED should light and the status should show `Pn:X`, `Pn:Y` or `Pn:Z`. If a pin shows all the time, the input is
+   inverted or the wiring is open: fix it before going on (`$5` stays 0 for NPN NO sensors).
+2. Jog each axis towards its switch (+ direction) at a low feed and check the LED lights about 3 mm before the hard
+   stop. If + moves an axis away from its switch, set that axis's bit in `$23` (X = 1, Y = 2, Z = 4) under
+   `machine.homing.grbl_settings` in `config.yaml`.
+3. Set `machine.homing.enabled: true`, restart the app and press **Apply machine settings**.
+4. Press **Home machine ($H)** with a hand on the E-stop. Z goes up first, then X and Y. If an axis runs the wrong
+   way, press the E-stop and fix `$23`.
+5. From home, jog each axis to the far end in 1 mm steps and set `$130-$132` a few mm short of it. Home again and
+   check that a jog past the end is refused (soft limit).
+6. Home, set work zero on a board, power off, power on, home again and move to X0 Y0. It should land on the same point
+   within the repeatability of the switches (inductive sensors: a few hundredths of a mm).
 
 ## 7. Z zero on the board
 Place a sheet of paper on the board. Jog Z down in 0.1 mm steps, then 0.01 mm, until the
@@ -64,7 +79,10 @@ automate this later.)
 - **Current:** clamp a meter on the same wire, run the spindle, and read both. Send
   `K<value>` to the DAQ, where value = old K × meter ÷ app reading. For example, with `K5` the app shows 2.0 A
   and the meter 2.3 A, so send `K5.75`. Use a serial terminal on the DAQ port with the app closed.
-  The value is stored in EEPROM.
+  The value is stored in EEPROM. Firmware 2.1 starts at `K5`, the right value for an SCT-013-005.
+- **Spindle load** (firmware 2.1, J1000 `H4-01 = 103`): with the spindle stopped *Spindle load* should read 0 %.
+  Run it in air at 12000 rpm and note the value (typically 25-40 %). It should rise while drilling. If it reads
+  about twice what the J1000 display shows (`U1-03` output current ÷ rated current), the 10 k/10 k divider is missing.
 - **Temperature:** with the machine cold, both probes should read within 0.5 °C of room temperature.
   A probe showing N/A is not found on the bus (check the 4.7 k pull-up and the wiring), and the
   DAQ must be reset after fixing it.
@@ -91,7 +109,7 @@ Drill a 5×4 grid at 10 mm pitch with a 1.0 mm bit in 1.6 mm FR4, `(0,0)` to `(4
 (0,0);(10,0);(20,0);(30,0);(40,0);(0,10);(10,10);(20,10);(30,10);(40,10);
 (0,20);(10,20);(20,20);(30,20);(40,20);(0,30);(10,30);(20,30);(30,30);(40,30)
 ```
-Turn on Quality Control in the session settings. The machine passes when the inspection shows
+Turn on Quality Control in the session settings. The machine passes when the head camera quality check shows
 all 20 holes within ±0.1 mm, the diameters read 1.00 ± 0.05 mm, the run had no stalls or alarms,
 and the second board, drilled without re-zeroing, overlays the first.
 
@@ -105,3 +123,7 @@ and the second board, drilled without re-zeroing, overlays the first.
 4. For each board, press **Align board to fiducials** and give 2 or 3 holes or round pads far apart, such as opposite
    corners. The job's holes are moved to the board's real position. If the fiducials disagree by more than 0.1 mm,
    the app warns you.
+5. Quality check: after the job (automatic with *Quality control* ticked, or **Quality check vs drawing**), the camera
+   visits each hole and compares it with the drawing. *Allowed tolerance* on the session page sets the position limit
+   and `camera.diameter_tol_mm` the diameter limit. Check it once with a hole you move on purpose in the drawing: it
+   must come out red.

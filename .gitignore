@@ -6,3 +6,5 @@ __pycache__/
 
 # Large generated CAD (published on the Releases page; regenerate with cad/router/assembly.py)
 cad/router/step/
+cad/.xt_cache.pkl
+cad/.brep_cache/

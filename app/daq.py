@@ -2,7 +2,11 @@
 
 Line protocol sent by firmware/daq/daq.ino (10 lines per second):
 
-    D,<ms>,<I_rms_A>,<T1_C>,<T2_C>,<ax_g>,<ay_g>,<az_g>,<vib_rms_g>*<XX>
+    D,<ms>,<I_rms_A>,<T1_C>,<T2_C>,<ax_g>,<ay_g>,<az_g>,<vib_rms_g>,<load_pct>*<XX>
+
+load_pct (firmware 2.1+) is the spindle load from the VFD's analog output,
+in % of the VFD's rated current. Lines from firmware 2.0, without it, are
+still accepted and give load None.
 
 XX is the XOR of every character between 'D' and '*' (inclusive of 'D',
 exclusive of '*'), as two hex digits, like NMEA. A sensor that is missing
@@ -19,7 +23,7 @@ from dataclasses import dataclass
 
 import serial
 
-FIELDS = ("ms", "current", "temp1", "temp2", "ax", "ay", "az", "vib")
+FIELDS = ("ms", "current", "temp1", "temp2", "ax", "ay", "az", "vib", "load")
 
 
 @dataclass
@@ -33,6 +37,7 @@ class DaqSample:
     ay: float
     az: float
     vib: float          # g rms of the AC part (vibration level)
+    load: float = None  # % of VFD rated output current (spindle motor load)
 
     @property
     def tilt_deg(self):
@@ -52,12 +57,12 @@ def checksum(body):
     return f"{c:02X}"
 
 
-def format_line(ms, current, temp1, temp2, ax, ay, az, vib):
+def format_line(ms, current, temp1, temp2, ax, ay, az, vib, load=None):
     """Used by the simulator and tests. Mirrors the firmware's output."""
     def f(v, nd):
         return "nan" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.{nd}f}"
     body = (f"D,{ms},{f(current, 3)},{f(temp1, 2)},{f(temp2, 2)},"
-            f"{f(ax, 4)},{f(ay, 4)},{f(az, 4)},{f(vib, 4)}")
+            f"{f(ax, 4)},{f(ay, 4)},{f(az, 4)},{f(vib, 4)},{f(load, 1)}")
     return f"{body}*{checksum(body)}"
 
 
@@ -70,7 +75,7 @@ def parse_line(line, now=None):
     if checksum(body).upper() != cs.strip().upper():
         return None
     parts = body.split(",")
-    if len(parts) != 1 + len(FIELDS):
+    if len(parts) not in (len(FIELDS), 1 + len(FIELDS)):     # firmware 2.0 lines have no load
         return None
     vals = []
     try:

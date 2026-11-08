@@ -18,7 +18,7 @@ class LoopbackSerial:
         self._open = True
         self._thread = threading.Thread(target=self._run, args=(tick_s,), daemon=True)
         self._thread.start()
-        self.sim.reset()                     # like the DTR reset on open: prints the banner
+        self.sim.reset(power_up=True)        # like the DTR reset on open: prints the banner
 
     def _sim_write(self, data):
         with self._cv:

@@ -709,7 +709,7 @@ class Ui_MainWindow(object):
         self.SideIP = QtWidgets.QWidget()
         self.SideIP.setStyleSheet("#SideIP {\n"
 "    border: none;\n"
-"background-image: url(:/ytulogo/ytulogo.png) stretch;\n"
+"background-image: url(:/Icon/ytulogo.png) stretch;\n"
 "    background-repeat: no-repeat;\n"
 "    background-position: center;\n"
 "    background-size: cover;\n"
@@ -1042,7 +1042,7 @@ class Ui_MainWindow(object):
         self.SideInfo = QtWidgets.QWidget()
         self.SideInfo.setStyleSheet("#SideInfo {\n"
 "    border: none;\n"
-"background-image: url(:/ytulogo/ytulogo.png) stretch;\n"
+"background-image: url(:/Icon/ytulogo.png) stretch;\n"
 "    background-repeat: no-repeat;\n"
 "    background-position: center;\n"
 "    background-size: cover;\n"
