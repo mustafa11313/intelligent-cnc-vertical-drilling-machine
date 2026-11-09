@@ -13,6 +13,20 @@ Every improvement and where it lives: [IMPROVEMENTS.md](IMPROVEMENTS.md). Full C
 
 > **About this repository.** It holds the **improved version (v2)** of the project, not the exact code described in the paper. The control software was reworked for Ubuntu 22.04 (see [What changed and why](#what-changed-and-why)), and the mechanics and electronics were reviewed with proposed upgrades. It also contains a **new CNC router design**, still in the CAD stage (see [cad/router](cad/router/README.md)).
 
+## Team
+
+The original machine (v1) was a team project at Yıldız Technical University, Mechatronics Department, presented at
+UTIS 2025. The authors of the paper:
+
+- **Umut Karagüzel**: Yıldız Technical University, Mechatronics Department (supervisor)
+- **Hasan Aytuğ Kurt**: Yılmaz Makine
+- **Ahmed Mansour**: Yıldız Technical University, Mechatronics Department
+- **Mustafa Almohamad**: Yıldız Technical University, Mechatronics Department
+
+The machine, its electronics, software and DAQ module in v1 are the team's work. This repository's v2 (the reworked
+control software, the review of the mechanics and electronics, the upgrade CAD and the CNC router design) is a later
+rework by Mustafa Almohamad.
+
 ## Contents
 
 ```
@@ -116,8 +130,8 @@ A new general-purpose vertical router (wood, plastics, aluminium) with a 300 × 
 
 If you use this work, please cite the paper:
 
-> Intelligent CNC Vertical Drilling Machine. Available on [ResearchGate](https://www.researchgate.net/publication/408419810_Intelligent_CNC_Vertical_Drilling_Machine).
+> U. Karagüzel, H. A. Kurt, A. Mansour and M. Almohamad, "Intelligent CNC Vertical Drilling Machine", UTIS 2025. Available on [ResearchGate](https://www.researchgate.net/publication/408419810_Intelligent_CNC_Vertical_Drilling_Machine).
 
 ## License
 
-No license has been chosen yet, so all rights are reserved by the author. Please ask before reusing the code or designs.
+MIT, see [LICENSE](LICENSE). You may use, change and share the code and designs, including commercially, as long as the copyright notice is kept. There is no warranty: check everything before you build or run it on a real machine.
