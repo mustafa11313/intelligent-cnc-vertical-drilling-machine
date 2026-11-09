@@ -11,7 +11,7 @@ still accepted and give load None.
 XX is the XOR of every character between 'D' and '*' (inclusive of 'D',
 exclusive of '*'), as two hex digits, like NMEA. A sensor that is missing
 or failed reports 'nan' and arrives here as None. Nothing is made up: the
-old code added random.uniform(...) to current and temperature, which is gone.
+the old code added a random offset to current and a random drift to temperature before logging; readings are now stored unchanged.
 
 On boot, and in reply to 'I\n', the firmware prints '#DAQ,<name>,<version>'.
 """

@@ -85,7 +85,7 @@ python3 -m pytest -q tests
 |---|---|---|
 | PC sends `X..,..Y*..Z`, waits for `111`, one small step at a time | slow, jerky, no acceleration, position counted on the PC by adding 0.22 mm per reply | GRBL plans whole moves; the whole program is streamed with GRBL's buffer protocol |
 | `int(float(...))` on every coordinate | 1.1 mm became 1 mm | floats end to end (1 µm rounding) |
-| `random.uniform` added to current and temperature | logged data was not real | removed; missing sensors are stored as NULL and shown as N/A |
+| The DAQ readings (2 Hz) were logged with a small random offset added to current and a slowly growing random drift added to temperature (`random.uniform`, apparently left over from testing) | the stored values were not the raw sensor readings | raw readings are stored unchanged; missing sensors are stored as NULL and shown as N/A |
 | COM ports, `CAP_DSHOW`, `os.system('cls')`, pyuic6 run at every start | Windows-only, slow start | Linux ports, V4L2, config file |
 | Port detection waits forever for a byte | hangs if a board is silent | banner check with timeouts |
 | Hough circles with 96 DPI | diameters not in real mm | calibrated camera (checkerboard or reference), contour measurement, pattern comparison |
